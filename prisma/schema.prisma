@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+// --- MODELO PRINCIPAL DE USUARIO ---
+model User {
+  id                   String        @id @default(cuid())
+  githubId             Int           @unique
+  username             String        @unique
+  email                String?
+  avatarUrl            String
+  role                 String        @default("MEMBER")
+  createdAt            DateTime      @default(now())
+  pointsBalance        Int           @default(0)
+  profile              Profile?
+  metrics              Metric[]
+  team                 Team?         @relation(fields: [teamId], references: [id])
+  teamId               String?
+  activityLog          ActivityLog[]
+  pointLedgerEntries   PointLedger[]
+  assignedBadges       UserBadge[]
+}
+
+
+// --- OTROS MODELOS ---
+model Profile {
+  id     String  @id @default(cuid())
+  userId String  @unique
+  user   User    @relation(fields: [userId], references: [id])
+  level  Int     @default(1)
+  bio    String?
+
+  rank   Rank?   @relation(fields: [rankId], references: [id])
+  rankId String?
+}
+
+model MergedBranch {
+  id         String   @id @default(cuid())
+  branchName String   @unique
+  mergedAt   DateTime @default(now())
+  prId       Int
+  authorId   String
+  @@index([authorId])
+}
+
+model Metric {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  points    Int      @default(0)
+  commits   Int      @default(0)
+  prs       Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model Team {
+  id      String @id @default(cuid())
+  name    String
+  members User[]
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  metadata  Json
+  createdAt DateTime @default(now())
+}
+
+// --- LOG DE EVENTOS CRUDOS DE GITHUB (SIN MAP) ---
+model GithubEvent {
+  id              String   @id @default(cuid())
+  deliveryId      String   @unique
+  eventType       String
+  action          String?
+  repoFullName    String?
+  senderLogin     String?
+  payload         Json
+  processedStatus String   @default("stored")
+  receivedAt      DateTime @default(now())
+
+  @@index([eventType])
+  @@index([repoFullName])
+  @@index([senderLogin])
+}
+
+model PointLedger {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  points       Int
+  ruleKey      String
+  ruleVersion  String   @default("v1.0")
+  entityId     String
+  notes        String?
+  isReversible Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  key         String       @unique
+  name        String
+  description String
+  criteria    Json
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  badgeId    String
+  badge      Badge    @relation(fields: [badgeId], references: [id])
+  obtainedAt DateTime @default(now())
+  metadata   Json?
+
+  @@unique([userId, badgeId])
+}
+
+model Rank {
+  id             String    @id @default(cuid())
+  name           String    @unique // ej. "Committer", "Contributor"
+  pointsRequired Int       @unique // Puntos necesarios para alcanzar este rango
+  color          String?   // ej. "#28A745"
+  
+  profiles       Profile[]
+}
