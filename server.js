@@ -1,5 +1,5 @@
 // ================================
-// 🌐 SERVER.JS — Git Masters API
+// SERVER.JS — Git Masters API
 // ================================
 import dotenv from 'dotenv';
 dotenv.config();
@@ -10,7 +10,7 @@ import passport from 'passport';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
-// ✅ Esta línea AHORA SÍ funciona porque swagger.js tiene un 'export default'
+// Esta línea AHORA SÍ funciona porque swagger.js tiene un 'export default'
 import swaggerSpec from './src/docs/swagger.js'; 
 import './src/config/passport.js';
 
@@ -64,13 +64,13 @@ app.get('/', (req, res) => {
 });
 
 // --- DOCUMENTACIÓN SWAGGER ---
-// ✅ Esta línea funciona porque 'swaggerSpec' se importa correctamente
+//Esta línea funciona porque 'swaggerSpec' se importa correctamente
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ✅ Webhooks (parser raw) DEBE IR PRIMERO
+//Webhooks (parser raw) DEBE IR PRIMERO
 app.use('/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
 
-// ✅ Luego express.json() sin conflicto
+// Luego express.json() sin conflicto
 app.use(express.json());
 
 // --- RUTAS DE LA APLICACIÓN ---
@@ -96,6 +96,5 @@ app.listen(PORT, () => {
     `Documentación de la API disponible en http://localhost:${PORT}/api-docs`
   );
 
-  // ✅ Inicializa el sistema de tareas automáticas
   initializeSchedulers();
 });
