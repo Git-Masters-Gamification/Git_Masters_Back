@@ -45,13 +45,6 @@
  *           description: Lista de insignias obtenidas por el usuario
  *           items:
  *             $ref: '#/components/schemas/Badge'
- *
- *   securitySchemes:
- *     cookieAuth:
- *       type: apiKey
- *       in: cookie
- *       name: token
- *       description: La sesión se mantiene a través de una cookie httpOnly llamada "token" que contiene el JWT.
  */
 
 /**
@@ -126,20 +119,4 @@
  *         description: Error interno al intentar cerrar la sesión.
  */
 
-/**
- * @openapi
- * /auth/failure:
- *   get:
- *     tags:
- *       - Auth
- *     summary: Endpoint de fallo de autenticación
- *     description: Ruta a la que se redirige si falla la autenticación con GitHub.
- *     responses:
- *       200:
- *         description: Mensaje de fallo.
- *         content:
- *           text/plain:
- *             schema:
- *               type: string
- *               example: Fallo la autenticación
- */
+
