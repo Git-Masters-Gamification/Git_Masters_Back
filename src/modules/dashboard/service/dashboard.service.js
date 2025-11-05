@@ -1,3 +1,4 @@
+// backend/src/modules/dashboard/service/dashboard.service.js
 import prisma from '../../../config/prisma.js';
 import { getActivityLogByUserId } from '../../profile/service/profile.service.js';
 
@@ -28,12 +29,12 @@ export const getDashboardData = async (userId) => {
         },
       },
     }),
-    // El historial de actividad que ya teníamos
-    getActivityLogByUserId(userId),
+    // El historial de actividad (excluyendo resets por defecto)
+    getActivityLogByUserId(userId, { excludeResets: true }),
   ]);
 
   if (!userProfile) {
-    throw new Error("Perfil de usuario no encontrado.");
+    throw new Error('Perfil de usuario no encontrado.');
   }
 
   // --- PASO 2: Calcular el rango del usuario actual ---
@@ -41,25 +42,23 @@ export const getDashboardData = async (userId) => {
 
   // --- PASO 3: Calcular el ranking de equipos ---
   const teamRanking = allTeams
-    .map(team => {
-      // Suma los puntos de todos los miembros del equipo
+    .map((team) => {
       const totalPoints = team.members.reduce((sum, member) => sum + member.pointsBalance, 0);
       return {
         id: team.id,
         name: team.name,
-        totalPoints: totalPoints,
+        totalPoints,
       };
     })
-    // Ordena los equipos por puntos de mayor a menor
     .sort((a, b) => b.totalPoints - a.totalPoints);
-  
+
   // --- PASO 4: Ensamblar el objeto final con el contrato exacto ---
   return {
     userId: userProfile.id,
     pointsTotal: userProfile.pointsBalance,
-    rank: rank,
-    badges: userProfile.assignedBadges.map(ab => ab.badge),
-    history: activity,
-    teamRanking: teamRanking,
+    rank,
+    badges: userProfile.assignedBadges.map((ab) => ab.badge),
+    history: activity, // ya excluye resets
+    teamRanking,
   };
 };

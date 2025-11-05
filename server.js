@@ -10,8 +10,8 @@ import passport from 'passport';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
-// ✅ Esta línea AHORA SÍ funciona porque swagger.js tiene un 'export default'
-import swaggerSpec from './src/docs/swagger.js'; 
+// ✅ Importa la especificación Swagger (export default)
+import swaggerSpec from './src/docs/swagger.js';
 import './src/config/passport.js';
 
 // --- IMPORTACIÓN DE RUTAS ---
@@ -25,14 +25,22 @@ import teamsRoutes from './src/modules/teams/routes/teams.routes.js';
 import dashboardRoutes from './src/modules/dashboard/routes/dashboard.routes.js';
 import badgesRoutes from './src/modules/badges/routes/badges.routes.js';
 import statisticsRoutes from './src/modules/statistics/routes/statistics.routes.js';
+import rankHistoryRoutes from './src/modules/rankHistory/routes/rankHistory.routes.js';
+import syncRoutes from './src/modules/sync/routes/sync.routes.js'; // ✅ Nuevo módulo de sincronización
 
+// --- MIDDLEWARES Y SERVICIOS GLOBALES ---
 import requestLogger from './src/shared/middlewares/requestLogger.js';
 import { initializeSchedulers } from './src/shared/validators/scheduler.service.js';
+
+// ✅ Importar el reinicio de rangos para activar el cron mensual
+import './src/scheduler/resetRanks.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ================================
 // --- MIDDLEWARES GLOBALES ---
+// ================================
 app.use(requestLogger);
 app.use(
   cors({
@@ -58,14 +66,21 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// ================================
 // --- RUTA PRINCIPAL ---
+// ================================
 app.get('/', (req, res) => {
   res.send('API de Git Masters funcionando! 🚀');
 });
 
+// ================================
 // --- DOCUMENTACIÓN SWAGGER ---
-// ✅ Esta línea funciona porque 'swaggerSpec' se importa correctamente
+// ================================
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// ================================
+// --- ORDEN DE MIDDLEWARES ---
+// ================================
 
 // ✅ Webhooks (parser raw) DEBE IR PRIMERO
 app.use('/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
@@ -73,7 +88,9 @@ app.use('/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
 // ✅ Luego express.json() sin conflicto
 app.use(express.json());
 
+// ================================
 // --- RUTAS DE LA APLICACIÓN ---
+// ================================
 app.use('/auth', authRoutes);
 app.use('/points', pointRoutes);
 app.use('/events', eventsRoutes);
@@ -83,19 +100,25 @@ app.use('/teams', teamsRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/badges', badgesRoutes);
 app.use('/statistics', statisticsRoutes);
+app.use('/api', rankHistoryRoutes);
+app.use('/sync', syncRoutes); // ✅ Nueva ruta agregada
 
+// ================================
 // --- RUTA DE FALLBACK ---
+// ================================
 app.get('/login-failed', (req, res) => {
   res.status(401).send('Fallo la autenticación.');
 });
 
+// ================================
 // --- INICIAR SERVIDOR ---
+// ================================
 app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-  console.log(
-    `Documentación de la API disponible en http://localhost:${PORT}/api-docs`
-  );
+  console.log(`✅ Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`📘 Documentación Swagger: http://localhost:${PORT}/api-docs`);
 
-  // ✅ Inicializa el sistema de tareas automáticas
+  // ✅ Inicializa schedulers generales
   initializeSchedulers();
+
+  console.log('🕒 Sistema de reinicio mensual de rangos cargado correctamente.');
 });
