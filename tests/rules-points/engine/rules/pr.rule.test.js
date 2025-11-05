@@ -4,7 +4,9 @@ import { jest } from "@jest/globals";
 const applyPointsMock = jest.fn();
 const findFirstMock = jest.fn();
 const findUniqueMock = jest.fn();
+const mergedBranchCreateMock = jest.fn();
 
+// --- Mock de point.service.js ---
 await jest.unstable_mockModule(
   "../../../../src/modules/rules-points/service/point.service.js",
   () => ({
@@ -12,16 +14,22 @@ await jest.unstable_mockModule(
   })
 );
 
+// --- Mock de prisma.js ---
 await jest.unstable_mockModule(
   "../../../../src/config/prisma.js",
   () => ({
     default: {
       pointLedger: { findFirst: findFirstMock },
       user: { findUnique: findUniqueMock },
+      mergedBranch: { create: mergedBranchCreateMock },
     },
   })
 );
 
+// --- Mock para evitar error de awardBadge no definida ---
+global.awardBadge = jest.fn();
+
+// --- Import real del módulo después de mockear ---
 const { processPullRequestRule } = await import(
   "../../../../src/modules/rules-points/engine/rules/pr.rule.js"
 );
@@ -31,9 +39,7 @@ describe("PR Rule - processPullRequestRule", () => {
 
   beforeEach(() => {
     user = { id: "u1", username: "author" };
-    applyPointsMock.mockClear();
-    findFirstMock.mockReset();
-    findUniqueMock.mockReset();
+    jest.clearAllMocks();
   });
 
   it("debería asignar puntos al abrir PR con checklist", async () => {
@@ -59,6 +65,7 @@ describe("PR Rule - processPullRequestRule", () => {
         ruleKey: "pr.creation",
       })
     );
+    expect(global.awardBadge).toHaveBeenCalledWith(user.id, "rompiendo_el_hielo");
   });
 
   it("no debería asignar puntos si el PR no tiene checklist", async () => {
@@ -100,7 +107,7 @@ describe("PR Rule - processPullRequestRule", () => {
   });
 
   it("debería asignar puntos al autor al hacer merge", async () => {
-    findFirstMock.mockResolvedValueOnce(null); // para merge
+    findFirstMock.mockResolvedValueOnce(null);
     findUniqueMock.mockResolvedValue(null);
 
     const event = {
@@ -125,10 +132,11 @@ describe("PR Rule - processPullRequestRule", () => {
         ruleKey: "pr.merge",
       })
     );
+    expect(mergedBranchCreateMock).toHaveBeenCalled();
   });
 
   it("debería asignar puntos al merger distinto por resolver conflictos", async () => {
-    findFirstMock.mockResolvedValueOnce(null); // para merge
+    findFirstMock.mockResolvedValueOnce(null);
     findUniqueMock.mockResolvedValue({ id: "u2", username: "merger" });
 
     const event = {

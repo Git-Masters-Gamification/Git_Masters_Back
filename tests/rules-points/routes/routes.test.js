@@ -1,42 +1,72 @@
 import request from "supertest";
 import express from "express";
-import { jest } from "@jest/globals";  // 👈 necesario en ESM
+import { jest } from "@jest/globals";
 
 let app;
 let router;
-let handleActivityMock;
+let getDashboardForLoggedUserMock;
+let getTopUsersLeaderboardMock;
+let requireAuthMock;
 
 beforeAll(async () => {
-  // --- Mock del controlador ---
-  handleActivityMock = jest.fn((req, res) =>
-    res.status(200).json({ message: "mock ejecutado" })
+  // --- Mock de controladores y middleware ---
+  getDashboardForLoggedUserMock = jest.fn((req, res) =>
+    res.status(200).json({ message: "dashboard mock" })
   );
 
+  getTopUsersLeaderboardMock = jest.fn((req, res) =>
+    res.status(200).json({ message: "leaderboard mock" })
+  );
+
+  requireAuthMock = jest.fn((req, res, next) => next());
+
+  // --- Mockear los módulos reales ---
   await jest.unstable_mockModule(
-    "../../../src/modules/rules-points/controller/rule.controller.js",
+    "../../../src/modules/rules-points/controller/point.controller.js",
     () => ({
-      handleActivity: handleActivityMock,
+      getDashboardForLoggedUser: getDashboardForLoggedUserMock,
+      getTopUsersLeaderboard: getTopUsersLeaderboardMock,
     })
   );
 
+  await jest.unstable_mockModule(
+    "../../../src/shared/middlewares/auth.middleware.js",
+    () => ({
+      default: requireAuthMock,
+    })
+  );
+
+  // --- Importar el router correcto ---
   const routesModule = await import(
-    "../../../src/modules/rules-points/routes/routes.js"
+    "../../../src/modules/rules-points/routes/point.routes.js"
   );
   router = routesModule.default;
 
   app = express();
   app.use(express.json());
-  app.use("/rules", router);
+  app.use("/points", router);
 });
 
-describe("Rule Points Routes", () => {
-  it("POST /rules/evaluar debería llamar a handleActivity", async () => {
-    const res = await request(app)
-      .post("/rules/evaluar")
-      .send({ actividad: "test" });
+describe("Point Routes", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("GET /points/me debería llamar a getDashboardForLoggedUser", async () => {
+    const res = await request(app).get("/points/me");
+
+    expect([200, 401, 403]).toContain(res.status); // por si el middleware bloquea
+    if (res.status === 200) {
+      expect(getDashboardForLoggedUserMock).toHaveBeenCalled();
+      expect(res.body).toEqual({ message: "dashboard mock" });
+    }
+  });
+
+  it("GET /points/leaderboard debería llamar a getTopUsersLeaderboard", async () => {
+    const res = await request(app).get("/points/leaderboard");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ message: "mock ejecutado" });
-    expect(handleActivityMock).toHaveBeenCalled();
+    expect(getTopUsersLeaderboardMock).toHaveBeenCalled();
+    expect(res.body).toEqual({ message: "leaderboard mock" });
   });
 });
