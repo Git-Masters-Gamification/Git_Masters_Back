@@ -1,40 +1,58 @@
 import prisma from '../../../config/prisma.js';
 import { runRulesForActivity } from '../../rules-points/engine/ruleEngine.js';
-
-export const processGitHubEvent = async (payload, deliveryId, eventType) => {
-  // 1. Manejo especial para el evento 'ping'
-  if (eventType === 'ping') {
-    console.log(`[Webhook Service] Ping de GitHub (${deliveryId}) recibido.`);
-    return; // <-- CLAVE: No se retorna ningún objeto, solo termina la ejecución.
+// IMPORTACIÓN CLAVE: Importamos la función de sincronización completa
+import { syncTeamsAndMembers } from '../../sync/service/sync.service.js';
+ 
+const handleTeamEvent = async (payload, eventType, organizationLogin) => {
+  console.log(`[Webhook Service] Evento de equipo recibido desde '${organizationLogin}'.`);
+  const team = payload.team;
+  if (!team) {
+    console.warn(`[Webhook Service] Payload de equipo no contiene datos válidos.`);
+    return false;
   }
-
-  // 2. Extraer información y buscar al usuario
-  const senderLogin = payload.sender?.login || payload.pusher?.name || null;
-  const user = await prisma.user.findUnique({
-    where: { username: senderLogin },
-  });
-
-  // 3. Si el usuario no existe, se registra y se detiene el proceso.
-  if (!user) {
-    console.warn(`[Webhook Service] Usuario '${senderLogin}' no encontrado. Ignorando evento.`);
-    return; // <-- CLAVE: Se detiene para no procesar eventos de usuarios desconocidos.
+ 
+  try {
+    if (payload.action === 'deleted') {
+      await prisma.team.delete({ where: { githubId: team.id } });
+      console.log(`[Webhook Service] Equipo '${team.name}' eliminado correctamente.`);
+    } else {
+      const teamRecord = await prisma.team.upsert({
+        where: { githubId: team.id },
+        update: {
+          name: team.name,
+          slug: team.slug,
+          description: team.description || null,
+        },
+        create: {
+          githubId: team.id,
+          name: team.name,
+          slug: team.slug,
+          description: team.description || null,
+        },
+      });
+      console.log(`[Webhook Service] Equipo '${teamRecord.name}' registrado/actualizado correctamente.`);
+    }
+    return true;
+  } catch (err) {
+    console.error(`[Webhook Service] Error procesando el equipo '${team?.name}' (${eventType}):`, err);
+    return false;
   }
-
-  // 4. Construir el registro del evento
+};
+ 
+const handleActivityLog = async (payload, deliveryId, eventType, user) => {
   const record = {
-    deliveryId: deliveryId,
-    eventType: eventType,
+    deliveryId,
+    eventType,
     action: payload.action || null,
     repoFullName: payload.repository?.full_name || null,
-    senderLogin: senderLogin,
-    payload: payload,
+    senderLogin: user.username,
+    payload,
   };
-
-  // 5. Intentar guardar el evento y crear el log de actividad
+ 
   try {
     const savedEvent = await prisma.githubEvent.create({ data: record });
     console.info(`[Webhook Service] Evento guardado: delivery=${savedEvent.deliveryId}`);
-
+ 
     await prisma.activityLog.create({
       data: {
         userId: user.id,
@@ -43,21 +61,60 @@ export const processGitHubEvent = async (payload, deliveryId, eventType) => {
       },
     });
     console.info(`[Webhook Service] ActivityLog creado para: ${user.username}`);
-
-    // Ejecutar reglas de puntos en segundo plano
+ 
     runRulesForActivity(savedEvent.deliveryId).catch(err => {
       console.error(`Error en ruleEngine para delivery ${deliveryId}:`, err);
     });
-
-    // <-- CLAVE: Ya no hay un 'return' al final del try. La función termina.
-
   } catch (err) {
-    // Manejo de eventos duplicados
     if (err.code === 'P2002' && err.meta?.target?.includes('deliveryId')) {
       console.warn(`[Webhook Service] Webhook duplicado ignorado: ${deliveryId}`);
-      return; // <-- CLAVE: Tampoco se retorna objeto aquí.
+      return;
     }
-    // Para cualquier otro error, se relanza para que lo capture el sistema
     throw err;
   }
+};
+ 
+export const processGitHubEvent = async (payload, deliveryId, eventType) => {
+  if (eventType === 'ping') {
+    console.log(`[Webhook Service] Ping de GitHub (${deliveryId}) recibido.`);
+    return;
+  }
+ 
+  const organizationLogin = payload.organization?.login || null;
+  let shouldRunFullSync = false;
+ 
+  if (eventType.startsWith('team')) {
+    shouldRunFullSync = await handleTeamEvent(payload, eventType, organizationLogin);
+  }
+ 
+  if (eventType === 'membership') {
+    console.log(`[Webhook Service] Evento de membresía recibido: ${payload.action}`);
+    shouldRunFullSync = true;
+  }
+ 
+  if (shouldRunFullSync) {
+    console.log(`[Webhook Service] Disparando sincronización completa de equipos y miembros...`);
+    syncTeamsAndMembers().catch(err => {
+      console.error(`Error durante la sincronización completa disparada por webhook:`, err);
+    });
+    return;
+  }
+ 
+  const senderLogin = payload.sender?.login || payload.pusher?.name || null;
+ 
+  if (senderLogin === 'Git-Masters-Gamification') {
+    console.log(`[Webhook Service] Evento de organización '${senderLogin}' ignorado.`);
+    return;
+  }
+ 
+  const user = await prisma.user.findUnique({
+    where: { username: senderLogin },
+  });
+ 
+  if (!user) {
+    console.warn(`[Webhook Service] Usuario '${senderLogin}' no encontrado. Ignorando evento.`);
+    return;
+  }
+ 
+  await handleActivityLog(payload, deliveryId, eventType, user);
 };

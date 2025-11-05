@@ -41,7 +41,7 @@ passport.use(
         const dbUser = await prisma.user.upsert({
           // 1. Dónde buscar al usuario: por su ID único de GitHub
           where: {
-            githubId: parseInt(profile.id), // El ID de GitHub es el identificador único
+            githubId: parseInt(profile.id, 10), // El ID de GitHub es el identificador único
           },
           // 2. Qué datos actualizar si el usuario ya existe
           update: {
@@ -51,7 +51,7 @@ passport.use(
           },
           // 3. Qué datos usar para crear el usuario si no existe
           create: {
-            githubId: parseInt(profile.id), // IMPORTANTE: El ID de GitHub es un string, lo convertimos a Int
+            githubId: parseInt(profile.id, 10), // IMPORTANTE: El ID de GitHub es un string, lo convertimos a Int
             username: profile.username,
             email: userEmail,
             avatarUrl: profile.photos?.[0]?.value || null,
