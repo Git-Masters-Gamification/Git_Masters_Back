@@ -106,11 +106,11 @@ async function applyQualityBonusAndPenalties(pr, author) {
     // Obtener revisiones para contar 'changes_requested'
     const reviews = await octokit.pulls.listReviews({ owner, repo, pull_number: pr.number });
     const latestReviews = new Map();
-    reviews.data.forEach(review => {
+    for (const review of reviews.data) {
         if (!latestReviews.has(review.user.login) || new Date(review.submitted_at) > new Date(latestReviews.get(review.user.login).submitted_at)) {
             latestReviews.set(review.user.login, review);
         }
-    });
+    }
     openChangeRequestsCount = [...latestReviews.values()].filter(r => r.state === 'CHANGES_REQUESTED').length;
 
   } catch (error) {
@@ -211,7 +211,7 @@ const handlePrMerged = async (pr, author) => {
   await recordMergedBranch(pr, author);
   await applyQualityBonusAndPenalties(pr, author);
   await applyConflictResolverPoints(pr, author);
-  await handleSquashMergePointTransfer(pr, author); // ✅ LLAMADA A LA LÓGICA DE SQUASH
+  await handleSquashMergePointTransfer(pr, author); // LLAMADA A LA LÓGICA DE SQUASH
 };
 
 /**

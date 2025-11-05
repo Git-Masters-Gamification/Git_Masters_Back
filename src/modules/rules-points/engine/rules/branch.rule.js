@@ -2,18 +2,16 @@
 
 import { applyPoints } from '../../service/point.service.js';
 import prisma from '../../../../config/prisma.js'; // Asegúrate que la ruta sea correcta
-import { subDays } from 'date-fns';
 
 const VALID_BRANCH_NAME_REGEX = /^[A-Z]+-\d+_[a-z0-9]+_[a-z0-9-_]+$/;
-const PROTECTED_BRANCHES = ['refs/heads/main', 'refs/heads/develop'];
-const EXCEPTION_ROLES = ['ADMIN', 'INTEGRATOR']; // Roles exentos de penalización por push directo
+const PROTECTED_BRANCHES = new Set(['refs/heads/main', 'refs/heads/develop']);
+const EXCEPTION_ROLES = new Set(['ADMIN', 'INTEGRATOR', 'MEMBER']); // Roles exentos de penalización por push directo
 const POINTS = {
   VALID_BRANCH_NAME: 20,
   DELETE_AFTER_MERGE: 40,
-  DIRECT_PUSH_PENALTY: -150, // Valor según especificación
-  FORCE_PUSH_PENALTY: -500,  // Valor según especificación
+  DIRECT_PUSH_PENALTY: -90, 
+  FORCE_PUSH_PENALTY: -100,  
 };
-const PENALTY_REDUCTION_FACTOR = 0.4; // Aplica solo el 40% de la penalización
 
 /**
  * Otorga puntos por crear una rama con una convención de nombre válida (Regla 5.2.1).
@@ -53,11 +51,11 @@ const handleBranchDeletion = async (event, user) => {
 
   // Si no hay registro o ya pasaron más de 14 días, no hacer nada
   if (!mergedInfo) return;
-  const daysSinceMerge = (new Date() - mergedInfo.mergedAt) / (1000 * 60 * 60 * 24);
+  const daysSinceMerge = (Date.now() - mergedInfo.mergedAt) / (1000 * 60 * 60 * 24);
   if (daysSinceMerge > 14) return;
 
   // Verificar si quien borra es el autor original del PR o un rol autorizado
-  const isAllowedToDelete = user.id === mergedInfo.authorId || EXCEPTION_ROLES.includes(user.role);
+  const isAllowedToDelete = user.id === mergedInfo.authorId || EXCEPTION_ROLES.has(user.role);
   if (!isAllowedToDelete) return;
 
   // Otorgar los puntos
@@ -82,13 +80,13 @@ const handleProtectedBranchPush = async (event, user) => {
   const branchRef = event.payload.ref;
   
   // Retorno temprano si la rama no está protegida
-  if (!PROTECTED_BRANCHES.includes(branchRef)) return;
+  if (!PROTECTED_BRANCHES.has(branchRef)) return;
 
   const branchName = branchRef.replace('refs/heads/', '');
 
   // Penalización por Force-push (Regla 5.2.4)
   if (event.payload.forced) {
-    const penaltyPoints = Math.round(POINTS.FORCE_PUSH_PENALTY * PENALTY_REDUCTION_FACTOR);
+    const penaltyPoints = Math.round(POINTS.FORCE_PUSH_PENALTY);
     await applyPoints({
       userId: user.id,
       points: penaltyPoints,
@@ -103,8 +101,8 @@ const handleProtectedBranchPush = async (event, user) => {
 
   // Penalización por Push Directo (Regla 5.2.3)
   // Aplicar solo si el usuario no tiene un rol exento
-  if (!EXCEPTION_ROLES.includes(user.role)) {
-    const penaltyPoints = Math.round(POINTS.DIRECT_PUSH_PENALTY * PENALTY_REDUCTION_FACTOR);
+  if (!EXCEPTION_ROLES.has(user.role)) {
+    const penaltyPoints = Math.round(POINTS.DIRECT_PUSH_PENALTY);
     await applyPoints({
       userId: user.id,
       points: penaltyPoints,

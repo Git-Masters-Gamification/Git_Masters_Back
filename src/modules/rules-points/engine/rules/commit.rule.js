@@ -10,8 +10,7 @@ const POINTS = {
   INCLUDES_TIME: 5,
 };
 const ATOMICITY_BASE_POINTS = 5;
-const DAILY_CAP = 60;
-const PENALTY_REDUCTION_FACTOR = 0.4; // Reduce la penalización en 60% (queda el 40%)
+const DAILY_CAP = 150;
 
 /**
  * Procesa un commit de reversión para anular *parcialmente* los puntos otorgados originalmente.
