@@ -1,13 +1,15 @@
 import swaggerJsdoc from 'swagger-jsdoc';
-// ❌ NO importes swaggerUi aquí, tu server.js ya lo hace.
-
+ 
+// ❌ No importes swaggerUi aquí, el server.js ya lo hace.
+ 
 const options = {
   definition: {
     openapi: '3.0.0',
     info: {
       title: 'Git-Masters V3 API',
       version: '1.0.0',
-      description: 'Documentación modular de la API de Git-Masters V3, que gamifica las buenas prácticas de desarrollo.',
+      description:
+        'Documentación modular de la API de Git-Masters V3, que gamifica las buenas prácticas de desarrollo.',
     },
     servers: [
       {
@@ -17,15 +19,17 @@ const options = {
     ],
     components: {
       securitySchemes: {
-        // ✅ Este es el único que querías dejar
+        // ✅ ÚNICO esquema de autenticación permitido
         cookieAuth: {
           type: 'apiKey',
           in: 'cookie',
           name: 'token',
-          description: 'Autenticación mediante una cookie httpOnly que se obtiene al hacer login.',
+          description:
+            'Autenticación mediante una cookie httpOnly que se obtiene al hacer login.',
         },
       },
     },
+    // ✅ Aplica cookieAuth globalmente a toda la API
     security: [{ cookieAuth: [] }],
     tags: [
       { name: 'Auth', description: 'Operaciones de autenticación de usuarios.' },
@@ -37,14 +41,23 @@ const options = {
       { name: 'Statistics', description: 'Endpoints para la gestión de estadísticas.' },
       { name: 'Teams', description: 'Gestión de equipos.' },
       { name: 'Webhooks', description: 'Controla los webhooks.' },
+      { name: 'Rank History', description: 'Historial de rangos, puntos y niveles de los usuarios a lo largo del tiempo (mensual).' },
     ],
   },
-  // ✅ Apunta a tus módulos para encontrar las rutas
-  apis: ['./src/modules/**/*.docs.js'], 
+  // ✅ Ruta donde Swagger buscará tus docs
+  apis: ['./src/modules/**/*.docs.js'],
 };
-
-// 1. Genera el objeto de la especificación
+ 
+// 1️⃣ Genera la especificación base
 const swaggerSpec = swaggerJsdoc(options);
-
-// 2. ✅ EXPORTA POR DEFECTO (esto arregla el error)
+ 
+// 2️⃣ Limpieza de esquemas extra (por si otros .docs.js agregaron bearerAuth o apiKeyAuth)
+if (swaggerSpec.components && swaggerSpec.components.securitySchemes) {
+  swaggerSpec.components.securitySchemes = {
+    cookieAuth: swaggerSpec.components.securitySchemes.cookieAuth,
+  };
+}
+swaggerSpec.security = [{ cookieAuth: [] }];
+ 
+// 3️⃣ Exporta la especificación final
 export default swaggerSpec;
