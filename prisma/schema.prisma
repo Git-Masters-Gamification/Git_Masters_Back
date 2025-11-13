@@ -13,21 +13,22 @@ datasource db {
 
 // --- MODELO PRINCIPAL DE USUARIO ---
 model User {
-  id                   String        @id @default(cuid())
-  githubId             Int           @unique
-  username             String        @unique
-  email                String?
-  avatarUrl            String
-  role                 String        @default("MEMBER")
-  createdAt            DateTime      @default(now())
-  pointsBalance        Int           @default(0)
-  profile              Profile?
-  metrics              Metric[]
-  team                 Team?         @relation(fields: [teamId], references: [id])
-  teamId               String?
-  activityLog          ActivityLog[]
-  pointLedgerEntries   PointLedger[]
-  assignedBadges       UserBadge[]
+  id                    String      @id @default(cuid())
+  githubId              Int         @unique
+  username              String      @unique
+  email                 String?
+  avatarUrl             String
+  role                  String      @default("MEMBER")
+  createdAt             DateTime    @default(now())
+  pointsBalance         Int         @default(0)
+  profile               Profile?
+  metrics               Metric[]
+  team                  Team?       @relation(fields: [teamId], references: [id])
+  teamId                String?
+  activityLog           ActivityLog[]
+  pointLedgerEntries    PointLedger[]
+  assignedBadges        UserBadge[]
+  adminStatus           Admin?
 }
 
 
@@ -137,4 +138,14 @@ model Rank {
   color          String?   // ej. "#28A745"
   
   profiles       Profile[]
+}
+
+model Admin {
+  // ID único para el registro de administrador
+  id             String     @id @default(cuid())
+  userId         String     @unique
+  user           User       @relation(fields: [userId], references: [id])
+  adminLevel     String     @default("FULL_ADMIN")
+  assignedAt     DateTime   @default(now())
+
 }

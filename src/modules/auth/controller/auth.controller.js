@@ -8,17 +8,24 @@ import {
 // Iniciar autenticación con GitHub
 export const loginWithGitHub = passport.authenticate("github", { scope: ["user:email"] });
 
-// Callback de GitHub
+// Callback de GitHub (maneja redirección y token)
 export const githubCallback = (req, res, next) => {
-  passport.authenticate("github", { session: false }, (err, user, info) => {
+  passport.authenticate("github", { session: false }, async (err, user, info) => {
     if (err || !user) {
+      console.error("Error en autenticación de GitHub:", err || info);
       return res.redirect(`${process.env.FRONTEND_URL}/login-failed`);
     }
 
-    // El servicio se encarga de crear el token y la cookie
-    generateAndSetToken(res, user);
+    try {
+      // Esperar a que se genere el token antes de redirigir
+      await generateAndSetToken(res, user);
 
-    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+      // Importante: usar "return" para cortar el flujo y evitar doble envío
+      return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+    } catch (error) {
+      console.error("Error al generar o guardar token:", error);
+      return res.redirect(`${process.env.FRONTEND_URL}/login-failed`);
+    }
   })(req, res, next);
 };
 
@@ -29,7 +36,6 @@ export const getProfile = async (req, res) => {
   }
 
   try {
-    // El servicio se encarga de obtener y procesar los datos
     const userProfile = await getCompleteProfile(req.user.githubId);
 
     if (!userProfile) {
@@ -41,15 +47,14 @@ export const getProfile = async (req, res) => {
       ...userProfile,
     };
 
-    res.json(responseData);
+    return res.json(responseData);
   } catch (err) {
     console.error("Error al obtener perfil:", err);
-    res.status(500).json({ message: "Error interno del servidor" });
+    return res.status(500).json({ message: "Error interno del servidor" });
   }
 };
 
 // Logout
 export const logout = (req, res, next) => {
-  // El servicio se encarga de toda la lógica de cierre de sesión
   cleanupSession(req, res, next);
 };

@@ -1,5 +1,5 @@
 // ================================
-// 🌐 SERVER.JS — Git Masters API
+// 🌐 SERVER.JS — Git Masters API (Ruta Admin Corregida)
 // ================================
 import dotenv from 'dotenv';
 dotenv.config();
@@ -25,6 +25,7 @@ import teamsRoutes from './src/modules/teams/routes/teams.routes.js';
 import dashboardRoutes from './src/modules/dashboard/routes/dashboard.routes.js';
 import badgesRoutes from './src/modules/badges/routes/badges.routes.js';
 import statisticsRoutes from './src/modules/statistics/routes/statistics.routes.js';
+import adminRoutes from './src/modules/admin/routes/admin.routes.js'; // ⬅️ RUTA CORREGIDA
 
 import requestLogger from './src/shared/middlewares/requestLogger.js';
 import { initializeSchedulers } from './src/shared/validators/scheduler.service.js';
@@ -83,6 +84,7 @@ app.use('/teams', teamsRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/badges', badgesRoutes);
 app.use('/statistics', statisticsRoutes);
+app.use('/admin', adminRoutes); // ⬅️ USO DEL ENDPOINT /admin
 
 // --- RUTA DE FALLBACK ---
 app.get('/login-failed', (req, res) => {
