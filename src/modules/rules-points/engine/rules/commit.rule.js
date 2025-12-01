@@ -74,7 +74,7 @@ async function getEnrichedCommitData(owner, repo, commit) {
  */
 async function calculatePointsForCommit(commit, files, stats) {
   const timeBonus = await getRuleValue('COMMIT_BONUS_TIME', 5);
-  const baseRuleKey = 'BASE_COMMIT';
+  const baseRuleKey = 'COMMIT_BASE';
   
   // 1. Cálculo Ponderado
   const { points: weightedPoints, notes: weightedNote } = await calculateWeightedScore(
