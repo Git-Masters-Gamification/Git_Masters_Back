@@ -5,11 +5,10 @@ import prisma from '../../../../config/prisma.js';
 import { differenceInDays } from 'date-fns';
 import { getRuleValue } from '../../../../shared/service/config.service.js';
 
+// Regex: TIPO-NUMERO_desc_breve (Ej: FEAT-123_login_page)
 const VALID_BRANCH_NAME_REGEX = /^[A-Z]+-\d+_[a-z0-9]+_[a-z0-9-_]+$/;
-const PROTECTED_BRANCHES = ['refs/heads/main', 'refs/heads/develop'];
-const EXCEPTION_ROLES = ['ADMIN', 'INTEGRATOR'];
-
-// (Las constantes POINTS y PENALTY_REDUCTION_FACTOR se eliminan, ahora son dinámicas)
+const PROTECTED_BRANCHES = ['refs/heads/main', 'refs/heads/develop', 'refs/heads/master'];
+const EXCEPTION_ROLES = ['ADMIN', 'INTEGRATOR', 'MAINTAINER'];
 
 /**
  * Otorga puntos por crear una rama con una convención de nombre válida.
@@ -19,6 +18,7 @@ const handleBranchCreation = async (event, user) => {
 
   const branchName = event.payload.ref;
 
+  // Solo damos puntos si cumple la regex estricta
   if (VALID_BRANCH_NAME_REGEX.test(branchName)) {
     // ✅ VALOR DINÁMICO
     const points = await getRuleValue('BRANCH_VALID_NAME', 20);
@@ -42,35 +42,38 @@ const handleBranchDeletion = async (event, user) => {
     
   const branchName = event.payload.ref;
     
+  // Buscamos si esta rama fue mergeada recientemente
   const mergedInfo = await prisma.mergedBranch.findUnique({
       where: { branchName },
   });
 
-  if (!mergedInfo) return;
+  if (!mergedInfo) return; // Si no fue mergeada, no damos puntos por borrarla
 
-  const daysSinceMerge = differenceInDays(new Date(), new Date(mergedInfo.mergedAt));
+  // Calcular días desde el merge
+  const daysSinceMerge = differenceInDays(new Date(), new Date(mergedInfo.mergedAt || mergedInfo.createdAt));
   
-  if (daysSinceMerge > 14) {
-      await prisma.mergedBranch.delete({ where: { branchName } });
-      return;
-  }
-
-  const isAllowedToDelete = user.id === mergedInfo.authorId || EXCEPTION_ROLES.includes(user.role);
-  if (!isAllowedToDelete) return;
-
-  // ✅ VALOR DINÁMICO (Usamos un default de 40 si no está en BD)
-  const points = await getRuleValue('BRANCH_DELETE_AFTER_MERGE', 40);
-
-  await applyPoints({
-      userId: user.id,
-      points: points,
-      ruleKey: 'branch.delete.after_merge',
-      entityId: branchName,
-      notes: `+${points} pts por borrar la rama '${branchName}' a tiempo.`,
-      isReversible: false,
-  });
-
+  // Limpiamos el registro de merge
   await prisma.mergedBranch.delete({ where: { branchName } });
+
+  // Si pasaron más de 14 días, no damos puntos (limpieza tardía)
+  if (daysSinceMerge > 14) return;
+
+  // Verificar permisos (solo el autor o admins deberían recibir puntos/borrar)
+  const isAllowedToDelete = user.id === mergedInfo.authorId || EXCEPTION_ROLES.includes(user.role);
+  
+  if (isAllowedToDelete) {
+      // ✅ VALOR DINÁMICO
+      const points = await getRuleValue('BRANCH_DELETE_AFTER_MERGE', 40);
+
+      await applyPoints({
+        userId: user.id,
+        points: points,
+        ruleKey: 'branch.delete.after_merge',
+        entityId: branchName,
+        notes: `+${points} pts por borrar la rama '${branchName}' a tiempo (${daysSinceMerge} días).`,
+        isReversible: false,
+      });
+  }
 };
 
 
@@ -84,12 +87,12 @@ const handleProtectedBranchPush = async (event, user) => {
 
   const branchName = branchRef.replace('refs/heads/', '');
 
-  // ✅ VALORES DINÁMICOS PARA PENALIZACIONES Y FACTOR
+  // ✅ VALORES DINÁMICOS
   const forcePenaltyBase = await getRuleValue('PENALTY_FORCE_PUSH', -500);
   const directPenaltyBase = await getRuleValue('PENALTY_DIRECT_PUSH', -150);
   const reductionFactor = await getRuleValue('PENALTY_REDUCTION_FACTOR', 0.4);
 
-  // 1. Penalización por Force-push
+  // 1. Penalización por Force-push (Muy grave)
   if (event.payload.forced) {
     const penaltyPoints = Math.round(forcePenaltyBase * reductionFactor);
     
@@ -104,7 +107,8 @@ const handleProtectedBranchPush = async (event, user) => {
     return; 
   }
 
-  // 2. Penalización por Push Directo
+  // 2. Penalización por Push Directo (Sin PR)
+  // Excluímos roles que tienen permiso de hacer esto (Admins)
   if (!EXCEPTION_ROLES.includes(user.role)) {
     const penaltyPoints = Math.round(directPenaltyBase * reductionFactor);
 
@@ -123,7 +127,10 @@ const handleProtectedBranchPush = async (event, user) => {
  * Punto de entrada principal para las reglas de Ramas.
  */
 export const processBranchRule = async (event, user) => {
-  switch (event.eventType) {
+  // GitHub manda el tipo de evento en headers o payload
+  const eventType = event.type || event.headers?.['x-github-event'] || 'unknown';
+
+  switch (eventType) {
     case 'create':
       await handleBranchCreation(event, user);
       break;
