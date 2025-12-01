@@ -1,135 +1,143 @@
 // RUTA: src/modules/rules-points/engine/rules/branch.rule.js
 
 import { applyPoints } from '../../service/point.service.js';
-import prisma from '../../../../config/prisma.js'; // Asegúrate que la ruta sea correcta
-import { subDays } from 'date-fns';
+import prisma from '../../../../config/prisma.js';
+import { differenceInDays } from 'date-fns';
+import { getRuleValue } from '../../../../shared/service/config.service.js';
 
+// Regex: TIPO-NUMERO_desc_breve (Ej: FEAT-123_login_page)
 const VALID_BRANCH_NAME_REGEX = /^[A-Z]+-\d+_[a-z0-9]+_[a-z0-9-_]+$/;
-const PROTECTED_BRANCHES = ['refs/heads/main', 'refs/heads/develop'];
-const EXCEPTION_ROLES = ['ADMIN', 'INTEGRATOR']; // Roles exentos de penalización por push directo
-const POINTS = {
-  VALID_BRANCH_NAME: 20,
-  DELETE_AFTER_MERGE: 40,
-  DIRECT_PUSH_PENALTY: -150, // Valor según especificación
-  FORCE_PUSH_PENALTY: -500,  // Valor según especificación
-};
-const PENALTY_REDUCTION_FACTOR = 0.4; // Aplica solo el 40% de la penalización
+const PROTECTED_BRANCHES = ['refs/heads/main', 'refs/heads/develop', 'refs/heads/master'];
+const EXCEPTION_ROLES = ['ADMIN', 'INTEGRATOR', 'MAINTAINER'];
 
 /**
- * Otorga puntos por crear una rama con una convención de nombre válida (Regla 5.2.1).
+ * Otorga puntos por crear una rama con una convención de nombre válida.
  */
 const handleBranchCreation = async (event, user) => {
-  // Solo aplicar a eventos de creación de ramas
   if (event.payload.ref_type !== 'branch') return;
 
   const branchName = event.payload.ref;
 
-  // Verificar si el nombre cumple la convención
+  // Solo damos puntos si cumple la regex estricta
   if (VALID_BRANCH_NAME_REGEX.test(branchName)) {
+    // ✅ VALOR DINÁMICO
+    const points = await getRuleValue('BRANCH_VALID_NAME', 20);
+
     await applyPoints({
       userId: user.id,
-      points: POINTS.VALID_BRANCH_NAME,
+      points: points,
       ruleKey: 'branch.creation.valid_name',
       entityId: branchName,
-      notes: `+${POINTS.VALID_BRANCH_NAME} pts por crear la rama con nombre válido: ${branchName}`,
-      isReversible: true, // Una creación podría revertirse si se borra la rama
+      notes: `+${points} pts por crear la rama con nombre válido: ${branchName}`,
+      isReversible: true,
     });
   }
 };
 
 /**
- * Otorga puntos por borrar una rama feature después de ser mergeada (Regla 5.2.2).
+ * Otorga puntos por borrar una rama feature después de ser mergeada.
  */
 const handleBranchDeletion = async (event, user) => {
-  // Solo aplicar a eventos de borrado de ramas
   if (event.payload.ref_type !== 'branch') return;
     
   const branchName = event.payload.ref;
     
-  // Buscar si esta rama fue registrada como mergeada
+  // Buscamos si esta rama fue mergeada recientemente
   const mergedInfo = await prisma.mergedBranch.findUnique({
       where: { branchName },
   });
 
-  // Si no hay registro o ya pasaron más de 14 días, no hacer nada
-  if (!mergedInfo) return;
-  const daysSinceMerge = (new Date() - mergedInfo.mergedAt) / (1000 * 60 * 60 * 24);
+  if (!mergedInfo) return; // Si no fue mergeada, no damos puntos por borrarla
+
+  // Calcular días desde el merge
+  const daysSinceMerge = differenceInDays(new Date(), new Date(mergedInfo.mergedAt || mergedInfo.createdAt));
+  
+  // Limpiamos el registro de merge
+  await prisma.mergedBranch.delete({ where: { branchName } });
+
+  // Si pasaron más de 14 días, no damos puntos (limpieza tardía)
   if (daysSinceMerge > 14) return;
 
-  // Verificar si quien borra es el autor original del PR o un rol autorizado
+  // Verificar permisos (solo el autor o admins deberían recibir puntos/borrar)
   const isAllowedToDelete = user.id === mergedInfo.authorId || EXCEPTION_ROLES.includes(user.role);
-  if (!isAllowedToDelete) return;
+  
+  if (isAllowedToDelete) {
+      // ✅ VALOR DINÁMICO
+      const points = await getRuleValue('BRANCH_DELETE_AFTER_MERGE', 40);
 
-  // Otorgar los puntos
-  await applyPoints({
-      userId: user.id, // Los puntos son para quien borra la rama
-      points: POINTS.DELETE_AFTER_MERGE,
-      ruleKey: 'branch.delete.after_merge',
-      entityId: branchName,
-      notes: `+${POINTS.DELETE_AFTER_MERGE} pts por borrar la rama '${branchName}' después del merge.`,
-      isReversible: false, // Borrar una rama no se revierte fácilmente
-  });
-
-  // Eliminar el registro para evitar otorgar puntos de nuevo si se recrea/borra la rama
-  await prisma.mergedBranch.delete({ where: { branchName } });
+      await applyPoints({
+        userId: user.id,
+        points: points,
+        ruleKey: 'branch.delete.after_merge',
+        entityId: branchName,
+        notes: `+${points} pts por borrar la rama '${branchName}' a tiempo (${daysSinceMerge} días).`,
+        isReversible: false,
+      });
+  }
 };
 
 
 /**
- * Aplica penalizaciones por push directo o forzado a ramas protegidas (Reglas 5.2.3 y 5.2.4).
+ * Aplica penalizaciones por push directo o forzado a ramas protegidas.
  */
 const handleProtectedBranchPush = async (event, user) => {
   const branchRef = event.payload.ref;
   
-  // Retorno temprano si la rama no está protegida
   if (!PROTECTED_BRANCHES.includes(branchRef)) return;
 
   const branchName = branchRef.replace('refs/heads/', '');
 
-  // Penalización por Force-push (Regla 5.2.4)
+  // ✅ VALORES DINÁMICOS
+  const forcePenaltyBase = await getRuleValue('PENALTY_FORCE_PUSH', -500);
+  const directPenaltyBase = await getRuleValue('PENALTY_DIRECT_PUSH', -150);
+  const reductionFactor = await getRuleValue('PENALTY_REDUCTION_FACTOR', 0.4);
+
+  // 1. Penalización por Force-push (Muy grave)
   if (event.payload.forced) {
-    const penaltyPoints = Math.round(POINTS.FORCE_PUSH_PENALTY * PENALTY_REDUCTION_FACTOR);
+    const penaltyPoints = Math.round(forcePenaltyBase * reductionFactor);
+    
     await applyPoints({
       userId: user.id,
       points: penaltyPoints,
       ruleKey: 'branch.push.force_push_penalty',
-      entityId: event.payload.after, // SHA del commit forzado
-      notes: `${penaltyPoints} pts por hacer force-push a la rama protegida '${branchName}' (Penalización reducida). Requiere revisión.`,
-      isReversible: false, // Requiere proceso de apelación manual
+      entityId: event.payload.after,
+      notes: `${penaltyPoints} pts (reducido) por hacer force-push a rama protegida '${branchName}'.`,
+      isReversible: false,
     });
-    // Aquí se podría añadir lógica para enviar una alerta a administradores
-    return; // La penalización por force-push es más grave y excluye la otra
+    return; 
   }
 
-  // Penalización por Push Directo (Regla 5.2.3)
-  // Aplicar solo si el usuario no tiene un rol exento
+  // 2. Penalización por Push Directo (Sin PR)
+  // Excluímos roles que tienen permiso de hacer esto (Admins)
   if (!EXCEPTION_ROLES.includes(user.role)) {
-    const penaltyPoints = Math.round(POINTS.DIRECT_PUSH_PENALTY * PENALTY_REDUCTION_FACTOR);
+    const penaltyPoints = Math.round(directPenaltyBase * reductionFactor);
+
     await applyPoints({
       userId: user.id,
       points: penaltyPoints,
       ruleKey: 'branch.push.direct_push_penalty',
-      entityId: event.payload.after, // SHA del último commit en el push
-      notes: `${penaltyPoints} pts por push directo a la rama protegida '${branchName}' (Penalización reducida).`,
-      isReversible: false, // Requiere proceso de apelación manual
+      entityId: event.payload.after,
+      notes: `${penaltyPoints} pts (reducido) por push directo a rama protegida '${branchName}'.`,
+      isReversible: false,
     });
-     // Aquí se podría añadir lógica para enviar una alerta a administradores
   }
 };
 
 /**
- * Punto de entrada principal para las reglas de Ramas. Es llamado por el ruleEngine.
+ * Punto de entrada principal para las reglas de Ramas.
  */
 export const processBranchRule = async (event, user) => {
-  // El 'event' que recibe puede estar enriquecido, aunque estas reglas no lo usan
-  switch (event.eventType) {
-    case 'create': // Evento cuando se crea una rama o tag
+  // GitHub manda el tipo de evento en headers o payload
+  const eventType = event.type || event.headers?.['x-github-event'] || 'unknown';
+
+  switch (eventType) {
+    case 'create':
       await handleBranchCreation(event, user);
       break;
-    case 'push': // Evento cuando se empujan commits
+    case 'push':
       await handleProtectedBranchPush(event, user);
       break;
-    case 'delete': // Evento cuando se borra una rama o tag
+    case 'delete':
       await handleBranchDeletion(event, user);
       break;
   }
