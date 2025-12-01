@@ -134,7 +134,6 @@ async function main() {
     await prisma.scoringRule.upsert({
       where: { key: rule.key },
       
-      // 🔥 CORRECCIÓN: Ahora sí actualizamos el valor si la regla ya existe
       update: {
         value: rule.value,         // Actualiza el 999
         description: rule.description,
